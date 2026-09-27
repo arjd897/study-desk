@@ -771,7 +771,19 @@ function fatal(title, msg) {
   main.replaceChildren(el("section", { class: "view" }, el("h1", { class: "page" }, title), el("p", { class: "lead" }, msg)));
 }
 async function boot() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(e => console.warn("SW", e));
+  if ("serviceWorker" in navigator) {
+    // When a new service worker takes over, the page is still running the old
+    // code. Reload once so a deploy always reaches the installed app.
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register("/sw.js")
+      .then(reg => { reg.update(); })
+      .catch(e => console.warn("SW", e));
+  }
   try { cfg = await (await fetch("/api/config", { cache: "no-store" })).json(); }
   catch (e) { return fatal("Can't reach the server", "Check your internet connection and reopen the app."); }
   if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return fatal("Setup isn't finished", "Add SUPABASE_URL and SUPABASE_ANON_KEY in Vercel settings, then redeploy.");

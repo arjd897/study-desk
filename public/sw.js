@@ -1,5 +1,5 @@
 // Service worker: makes the app installable, opens offline, and shows push notifications.
-const CACHE = "study-desk-v1";
+const CACHE = "study-desk-v2";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
@@ -14,8 +14,11 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
+  // "no-cache" still sends the ETag, but never lets the browser's own HTTP
+  // cache answer from a stale copy, which used to leave the installed app
+  // running old code after a deploy.
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "no-cache" })
       .then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return res; })
       .catch(() => caches.match(e.request).then(r => r || caches.match("/")))
   );
