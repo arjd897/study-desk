@@ -397,7 +397,7 @@ function renderExplore(openId) {
     el("form", { class: "ask", onsubmit: e => { e.preventDefault(); const t = inp.value.trim(); if (t) genPath(t, go, st); } }, inp, go),
     el("div", { class: "chips" }, QUICK.map(q => el("button", { type: "button", class: "chip", onclick: () => { inp.value = q; genPath(q, go, st); } }, q))),
     st);
-  if (S.paths.length) v.append(el("h2", { class: "sec" }, "Your paths"), S.paths.map(p => pathCard(p, p.id === openId)));
+  if (S.paths.length) v.append(el("h2", { class: "sec" }, "Your paths"), ...S.paths.map(p => pathCard(p, p.id === openId)));
   main.replaceChildren(v);
 }
 function pathCard(p, open) {
