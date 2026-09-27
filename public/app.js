@@ -525,7 +525,7 @@ function renderLearn(item) {
       const again = el("button", { class: "btn ghost", type: "button", onclick: () => startQuiz(again) }, "New test");
       quizBox.append(el("div", { class: "row" }, again));
     } }, "Check my answers");
-    quizBox.replaceChildren(el("h2", { class: "sec" }, "Quick test"), sets, qst, el("div", { class: "row" }, submit));
+    quizBox.replaceChildren(el("h2", { class: "sec" }, "Quick test"), ...sets, qst, el("div", { class: "row" }, submit));
   }
 
   async function saveTerms(btn, aSt) {
