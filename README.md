@@ -77,7 +77,7 @@ Keep a notepad open and paste each key into it as you go. **Never share the secr
 ### 2c. Groq (optional backup AI)
 
 1. In the Groq console, open **API Keys → Create API Key**.
-2. Copy it. This is `GROQ_API_KEY` (**SECRET**). Leave `GROQ_MODEL` as `llama-3.3-70b-versatile` unless Groq's model list says otherwise.
+2. Copy it. This is `GROQ_API_KEY` (**SECRET**). Leave `GROQ_MODEL` as `qwen/qwen3.8-27b` unless Groq's model list says otherwise.
 
 ### 2d. Notification keys
 
@@ -127,7 +127,7 @@ It prints two keys:
 | `GEMINI_API_KEY` | from 2b (secret) |
 | `GEMINI_MODEL` | from 2b |
 | `GROQ_API_KEY` | from 2c, or leave it out |
-| `GROQ_MODEL` | `llama-3.3-70b-versatile`, or leave it out |
+| `GROQ_MODEL` | `qwen/qwen3.8-27b`, or leave it out |
 | `VAPID_PUBLIC_KEY` | from 2d |
 | `VAPID_PRIVATE_KEY` | from 2d (secret) |
 | `VAPID_SUBJECT` | `mailto:you@gmail.com` |
