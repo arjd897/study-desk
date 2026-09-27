@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Personal AI/ML study app: daily picks, simple lessons, quizzes, new-paper alerts.",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "daily": "node scripts/daily.mjs"
   },
