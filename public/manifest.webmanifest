@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Study Desk: AI/ML",
+  "short_name": "Study Desk",
+  "description": "Your personal AI/ML teacher: daily picks, simple lessons, tests and new-paper alerts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F8FC",
+  "theme_color": "#2447B8",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

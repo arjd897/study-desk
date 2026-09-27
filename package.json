@@ -1,0 +1,15 @@
+{
+  "name": "study-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal AI/ML study app: daily picks, simple lessons, quizzes, new-paper alerts.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "daily": "node scripts/daily.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "web-push": "^3.6.7"
+  }
+}
