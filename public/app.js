@@ -9,7 +9,10 @@ const GOALS = ["Crack senior / lead AI/ML interviews","Become a strong LLM engin
 const TIMES = ["1 hour","2 hours","3–4 hours","5+ hours"];
 
 /* ================= state ================= */
-const S = { profile: null, recs: null, learned: {}, quizzes: [], glossary: {}, paths: [], papers: [] };
+const S = { profile: null, recs: null, learned: {}, quizzes: [], glossary: {}, paths: [], papers: [],
+            track: { concepts: [], prereqs: {}, levels: {}, mastery: {} } };
+const EMPTY_STATE = () => ({ profile: null, recs: null, learned: {}, quizzes: [], glossary: {}, paths: [], papers: [],
+            track: { concepts: [], prereqs: {}, levels: {}, mastery: {} } });
 let sb = null, cfg = {}, user = null;
 let current = "home", prevView = "home", recsTried = false;
 let recovering = /type=recovery/.test(location.hash);
@@ -112,8 +115,8 @@ async function token() {
   const { data } = await sb.auth.getSession();
   return data.session ? data.session.access_token : "";
 }
-async function apiJSON(payload) {
-  const r = await fetch("/api/ai", {
+async function api(path, payload) {
+  const r = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer " + (await token()) },
     body: JSON.stringify(payload)
@@ -122,6 +125,7 @@ async function apiJSON(payload) {
   if (!r.ok) throw { message: (d && d.message) || "Something went wrong. Try again." };
   return d;
 }
+const apiJSON = (payload) => api("/api/ai", payload);
 async function apiStream(payload, onText, signal) {
   const r = await fetch("/api/ai", {
     method: "POST", signal,
@@ -160,17 +164,30 @@ function profileBlock() {
 /* ================= database ================= */
 async function loadAll() {
   const uid = user.id;
-  const [p, l, q, g, pa, r, pp] = await Promise.all([
+  const [p, l, q, g, pa, r, pp, cc, ce, cl, ms] = await Promise.all([
     sb.from("profiles").select("data").eq("user_id", uid).maybeSingle(),
     sb.from("learned").select("item_id, item, created_at").eq("user_id", uid),
     sb.from("quizzes").select("*").eq("user_id", uid).order("created_at", { ascending: false }).limit(300),
     sb.from("glossary").select("*").eq("user_id", uid),
     sb.from("paths").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
     sb.from("recs").select("*").eq("user_id", uid).order("day", { ascending: false }).limit(1),
-    sb.from("papers").select("*").gte("day", daysAgo(10)).order("day", { ascending: false }).order("upvotes", { ascending: false }).limit(80)
+    sb.from("papers").select("*").gte("day", daysAgo(10)).order("day", { ascending: false }).order("upvotes", { ascending: false }).limit(80),
+    // The curriculum is shared, so it loads for everyone. Level bodies are
+    // fetched only when a concept is opened; this just asks which exist.
+    sb.from("concepts").select("*").order("sort"),
+    sb.from("concept_edges").select("*"),
+    sb.from("concept_levels").select("concept_id, level"),
+    sb.from("mastery").select("*").eq("user_id", uid)
   ]);
   const firstErr = [p, l, q, g, pa, r, pp].find(x => x.error);
   if (firstErr) throw new Error(firstErr.error.message);
+
+  const prereqs = {}, levels = {}, mastery = {};
+  for (const c of cc.data || []) prereqs[c.id] = [];
+  for (const e of ce.data || []) (prereqs[e.concept_id] = prereqs[e.concept_id] || []).push(e.requires_id);
+  for (const r2 of cl.data || []) (levels[r2.concept_id] = levels[r2.concept_id] || []).push(r2.level);
+  for (const m of ms.data || []) mastery[m.concept_id] = m;
+  S.track = { concepts: cc.data || [], prereqs, levels, mastery };
   S.profile = p.data ? p.data.data : null;
   S.learned = {}; (l.data || []).forEach(x => { S.learned[x.item_id] = Object.assign({}, x.item, { date: Date.parse(x.created_at) }); });
   S.quizzes = (q.data || []).map(x => ({ id: x.id, itemId: x.item_id, item: x.item, area: x.area, score: x.score, total: x.total, date: Date.parse(x.created_at) }));
@@ -202,15 +219,18 @@ const db = {
 
 /* ================= navigation ================= */
 function show(view, arg) {
-  if (view !== "learn") prevView = view;
+  // "learn" and "concept" are sub-views: the tab of where you came from stays lit.
+  const sub = view === "learn" || view === "concept";
+  if (!sub) prevView = view;
   current = view;
   tabs.classList.toggle("hidden", view === "onboard" || view === "auth");
   tabs.querySelectorAll("button").forEach(b => {
-    if (b.dataset.view === view || (view === "learn" && b.dataset.view === prevView)) b.setAttribute("aria-current", "page");
+    if (b.dataset.view === view || (sub && b.dataset.view === (view === "concept" ? "path" : prevView))) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   });
   window.scrollTo(0, 0);
-  ({ home: renderHome, new: renderNew, explore: renderExplore, glossary: renderGlossary, progress: renderProgress,
+  ({ home: renderHome, new: renderNew, path: renderPath, concept: renderConcept,
+     explore: renderExplore, glossary: renderGlossary, progress: renderProgress,
      onboard: renderOnboard, learn: renderLearn, auth: renderAuth, reset: renderNewPassword })[view](arg);
 }
 tabs.addEventListener("click", e => { const b = e.target.closest("button[data-view]"); if (b) show(b.dataset.view); });
@@ -584,6 +604,233 @@ function renderLearn(item) {
   })();
 }
 
+/* ================= the curriculum ================= */
+
+const LEVEL_NAMES = ["Intuition", "Mechanism", "The paper", "Build it", "Critique", "Design"];
+const LEVEL_HINT = [
+  "What problem this solves, and the idea in plain words.",
+  "The maths, derived step by step, with a worked example.",
+  "A guided read of the paper that introduced it.",
+  "Implement the core idea yourself, and have it reviewed.",
+  "Where it breaks, what it cost, and what replaced it.",
+  "Use it in a real system, under real constraints."
+];
+
+// -1 means attempted but never passed; absent means never started.
+const heldLevel = (id) => { const m = S.track.mastery[id]; return m ? m.level : -1; };
+const isOpen = (id) => (S.track.prereqs[id] || []).every(r => heldLevel(r) >= 0);
+const written = (id) => (S.track.levels[id] || []).sort((a, b) => a - b);
+const conceptById = (id) => S.track.concepts.find(c => c.id === id);
+
+function conceptState(c) {
+  const held = heldLevel(c.id);
+  if (held >= c.max_level) return "mastered";
+  if (held >= 0) return "learning";
+  return isOpen(c.id) ? "ready" : "locked";
+}
+
+function renderPath() {
+  const cs = S.track.concepts;
+  if (!cs.length) {
+    return main.replaceChildren(el("section", { class: "view" },
+      el("h1", { class: "page" }, "Your path"),
+      el("p", { class: "lead" }, "The curriculum is still being prepared. Check back shortly.")));
+  }
+
+  const mastered = cs.filter(c => conceptState(c) === "mastered").length;
+  const due = cs.filter(c => { const m = S.track.mastery[c.id]; return m && m.due_at && m.due_at <= today(); });
+
+  const v = el("section", { class: "view" },
+    el("h1", { class: "page" }, "From matrix multiply to a serving system"),
+    el("p", { class: "lead" }, "Each step unlocks the next. Nothing here is optional, and nothing is out of order."),
+    el("div", { class: "bar big" }, el("i", { style: "width:" + Math.round(100 * mastered / cs.length) + "%" })),
+    el("p", { class: "hint" }, `${mastered} of ${cs.length} concepts mastered`));
+
+  if (due.length) {
+    v.append(el("h2", { class: "sec" }, "Due for review"),
+      el("p", { class: "hint" }, "You passed these before. Come back to them now so they stick."),
+      ...due.slice(0, 3).map(c => conceptRow(c, true)));
+  }
+
+  v.append(el("h2", { class: "sec" }, "The path"), ...cs.map(c => conceptRow(c, false)));
+  main.replaceChildren(v);
+}
+
+function conceptRow(c, isDue) {
+  const state = conceptState(c);
+  const held = heldLevel(c.id);
+  const have = written(c.id).length;
+  const locked = state === "locked";
+
+  const missing = (S.track.prereqs[c.id] || []).filter(r => heldLevel(r) < 0)
+    .map(r => (conceptById(r) || {}).title || r);
+
+  // Both facts can be true at once, and the learner needs both: what is
+  // blocking them, and whether the material even exists yet.
+  const notes = [];
+  if (locked) notes.push("Unlocks after: " + missing.join(", "));
+  if (!have) notes.push("Still being written.");
+
+  return el("button", {
+    class: "step " + state + (isDue ? " due" : ""),
+    type: "button",
+    disabled: locked || !have ? true : null,
+    onclick: () => show("concept", c.id)
+  },
+    el("div", { class: "step-top" },
+      el("span", { class: "tag k-" + (state === "mastered" ? "paper" : "concept") }, LEVEL_NAMES[Math.max(0, held)] || "Not started"),
+      el("span", {}, c.area),
+      held >= 0 ? el("span", { class: "done-mark" }, `L${held} of L${c.max_level}`) : null),
+    el("p", { class: "item-title" }, c.title),
+    el("p", { class: "item-why" }, c.blurb),
+    notes.length ? el("p", { class: "item-note" }, notes.join(" · ")) : null);
+}
+
+/* ---------------- one concept, six levels ---------------- */
+
+async function renderConcept(id) {
+  const c = conceptById(id);
+  if (!c) return show("path");
+
+  const st = el("p", { class: "status" });
+  const bodyBox = el("div", { class: "reading" });
+  const tabRow = el("div", { class: "chips" });
+  const proveBox = el("div", {});
+
+  const v = el("section", { class: "view" },
+    el("button", { class: "link", type: "button", onclick: () => show("path") }, "← Back to the path"),
+    el("h1", { class: "page" }, c.title),
+    el("p", { class: "lead" }, c.blurb),
+    tabRow, st, bodyBox, proveBox);
+  main.replaceChildren(v);
+
+  status(st, "Opening…", "busy");
+  const { data, error } = await sb.from("concept_levels")
+    .select("level, body, sources, exercise").eq("concept_id", id).order("level");
+  if (error) return status(st, "Couldn't load this lesson. Try again.", "err");
+  status(st, "");
+
+  const byLevel = new Map((data || []).map(r => [r.level, r]));
+  if (!byLevel.size) return status(st, "This concept is still being written.", "err");
+
+  let openLevel = Math.min(Math.max(heldLevel(id) + 1, 0), c.max_level);
+  if (!byLevel.has(openLevel)) openLevel = [...byLevel.keys()][0];
+
+  const draw = () => {
+    tabRow.replaceChildren(...[...byLevel.keys()].map(lv => el("button", {
+      class: "chip" + (lv === openLevel ? " on" : ""),
+      type: "button",
+      "aria-pressed": lv === openLevel ? "true" : "false",
+      onclick: () => { openLevel = lv; draw(); }
+    }, `L${lv} ${LEVEL_NAMES[lv]}` + (heldLevel(id) >= lv ? " ✓" : ""))));
+
+    const row = byLevel.get(openLevel);
+    bodyBox.replaceChildren();
+    bodyBox.innerHTML = md(row.body);
+
+    const cites = (row.sources || []).map(s => s.arxiv_id).filter((x, i, a) => a.indexOf(x) === i);
+    if (cites.length) {
+      bodyBox.append(el("p", { class: "hint" }, "Grounded in: ",
+        ...cites.map(a => el("a", { href: "https://arxiv.org/abs/" + a, target: "_blank", rel: "noopener" }, "arXiv:" + a + " "))));
+    }
+    proveBox.replaceChildren(el("p", { class: "hint" }, LEVEL_HINT[openLevel]), proveButton(c, openLevel, row));
+  };
+  draw();
+}
+
+function proveButton(c, level, row) {
+  const box = el("div", { class: "setting" });
+  const st = el("p", { class: "status" });
+  const passed = heldLevel(c.id) >= level;
+
+  const go = el("button", { class: "btn", type: "button" },
+    passed ? "Prove it again" : level === 3 ? "Start the exercise" : "Prove you understand this");
+
+  go.onclick = async () => {
+    go.disabled = true;
+    status(st, "Setting a question…", "busy");
+    try {
+      const q = await api("/api/grade", { action: "ask", concept_id: c.id, level });
+      status(st, "");
+      box.replaceChildren(answerForm(c, level, q, box));
+    } catch (e) { go.disabled = false; status(st, e.message, "err"); }
+  };
+
+  box.append(el("h3", {}, passed ? `You passed L${level}` : `Prove it: L${level} ${LEVEL_NAMES[level]}`),
+    el("div", { class: "row" }, go), st);
+  return box;
+}
+
+function answerForm(c, level, q, box) {
+  const wrap = el("div", {});
+  const qBox = el("div", { class: "reading" });
+  qBox.innerHTML = md(q.question);
+
+  const isCode = q.kind === "code";
+  const input = el("textarea", {
+    class: "field tall",
+    rows: isCode ? "14" : "7",
+    spellcheck: isCode ? "false" : "true",
+    placeholder: isCode ? "Paste your implementation here" : "Your answer, in a few sentences. Show your reasoning."
+  });
+  const st = el("p", { class: "status" });
+  const out = el("div", {});
+
+  const submit = el("button", { class: "btn", type: "button" }, isCode ? "Submit for review" : "Mark my answer");
+  submit.onclick = async () => {
+    const answer = input.value.trim();
+    if (answer.length < 10) return status(st, "Write a real answer first.", "err");
+    submit.disabled = true;
+    status(st, isCode ? "Tracing your code…" : "Marking…", "busy");
+    try {
+      const r = await api("/api/grade", {
+        action: "grade", concept_id: c.id, level, answer,
+        question: q.question, expects: q.expects || []
+      });
+      status(st, "");
+      out.replaceChildren(verdict(c, level, r));
+      if (r.passed) {
+        const m = S.track.mastery[c.id] || { concept_id: c.id, level: -1 };
+        m.level = Math.max(m.level, level);
+        S.track.mastery[c.id] = m;
+      }
+      submit.disabled = false;
+    } catch (e) { submit.disabled = false; status(st, e.message, "err"); }
+  };
+
+  wrap.append(el("h3", {}, isCode ? "The exercise" : "Question"), qBox,
+    q.rubric ? el("details", {}, el("summary", {}, "What the review will check"),
+      el("ul", { class: "steps" }, ...q.rubric.map(x => el("li", {}, x)))) : null,
+    input, el("div", { class: "row" }, submit), st, out);
+  return wrap;
+}
+
+function verdict(c, level, r) {
+  const pct = Math.round(r.score * 100);
+  const fb = el("div", { class: "reading" });
+  fb.innerHTML = md(r.feedback || "");
+
+  const box = el("div", { class: "grade-wrap" },
+    el("div", { class: "grade" + (r.passed ? "" : " sm") }, pct + "%"),
+    el("p", {}, r.passed
+      ? (r.unlocked ? `Passed. L${level} is now yours.` : "Passed again. The review clock has been pushed back.")
+      : "Not yet. Read the feedback, then try again."));
+
+  const parts = [box, fb];
+  if (r.bug) parts.push(el("p", { class: "item-note" }, "Defect found: " + r.bug));
+  if (r.rubric_results) {
+    parts.push(el("ul", { class: "steps" }, ...r.rubric_results.map(x =>
+      el("li", { class: x.met ? "right" : "wrong" }, (x.met ? "✓ " : "✗ ") + x.item + (x.why ? " — " + x.why : "")))));
+  } else if ((r.misses || []).length) {
+    parts.push(el("p", { class: "hint" }, "Missing: " + r.misses.join("; ")));
+  }
+  if (r.passed && level < c.max_level) {
+    parts.push(el("div", { class: "row" },
+      el("button", { class: "btn ghost", type: "button", onclick: () => show("concept", c.id) }, `Continue to L${level + 1}`)));
+  }
+  return el("div", {}, ...parts);
+}
+
 /* ================= glossary ================= */
 function renderGlossary() {
   const all = Object.values(S.glossary).sort((a, b) => a.term.localeCompare(b.term));
@@ -792,7 +1039,7 @@ async function boot() {
   let started = false;
   sb.auth.onAuthStateChange((event, session) => {
     if (event === "PASSWORD_RECOVERY") { recovering = true; user = session.user; started = true; show("reset"); return; }
-    if (event === "SIGNED_OUT") { user = null; started = false; Object.assign(S, { profile: null, recs: null, learned: {}, quizzes: [], glossary: {}, paths: [], papers: [] }); show("auth"); return; }
+    if (event === "SIGNED_OUT") { user = null; started = false; Object.assign(S, EMPTY_STATE()); show("auth"); return; }
     if (session && !started) { started = true; user = session.user; setTimeout(afterSignIn, 0); }
   });
   const { data } = await sb.auth.getSession();

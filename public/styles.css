@@ -187,3 +187,21 @@ nav.tabs svg{width:22px;height:22px}
 .setting{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem;margin:.6rem 0}
 .setting h3{margin:0 0 .2rem;font-size:1rem}
 .setting p{margin:.2rem 0}
+
+/* ---------- curriculum path ---------- */
+.bar.big{grid-column:auto;height:10px;border-radius:5px;margin:.2rem 0 .4rem}
+.step{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:.9rem 1rem;cursor:pointer;margin:0 0 .6rem;position:relative}
+.step:hover:not(:disabled){border-color:var(--blue)}
+.step:disabled{cursor:not-allowed;opacity:.62}
+.step-top{display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap;font-size:.8rem;color:var(--soft)}
+.step.ready{border-left:4px solid var(--blue)}
+.step.learning{border-left:4px solid var(--hl-paper)}
+.step.mastered{border-left:4px solid var(--green)}
+.step.mastered .item-title::after{content:" ✓";color:var(--green)}
+.step.locked{border-left:4px solid var(--line);background:transparent}
+.step.due{box-shadow:0 0 0 2px var(--blue-soft)}
+.chip.on{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);font-weight:600}
+textarea.field.tall{min-height:180px;font-family:var(--mono);font-size:.88rem;line-height:1.5}
+.steps li.right{color:var(--green)}
+.steps li.wrong{color:var(--red)}
