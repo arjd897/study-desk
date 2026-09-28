@@ -69,13 +69,26 @@ async function sourcesFor(conceptId) {
 
 /* ---------------- writing one level ---------------- */
 
+// Stored content is permanent and shared, so refuse anything that stopped
+// mid-thought rather than saving a half-written lesson for everyone.
+function assertComplete(body) {
+  const t = body.trim();
+  if (t.length < 400) throw new LLMError("empty", `only ${t.length} chars came back`);
+  if (!/[.!?:)"'`\]}]$/.test(t) && !t.endsWith("```")) {
+    throw new LLMError("truncated", `ends mid-sentence: ...${t.slice(-60)}`);
+  }
+  const opened = (t.match(/```/g) || []).length;
+  if (opened % 2) throw new LLMError("truncated", "unclosed code fence");
+  return t;
+}
+
 async function write({ concept, level, prereqTitles }) {
   const sources = level === 0 || level === 5 ? [] : await sourcesFor(concept.id);
   const prompt = levelPrompt(level, concept, prereqTitles, sources);
   const cite = sources.map(s => ({ arxiv_id: s.arxiv_id, section: s.heading }));
 
   if (level === 3) {
-    const d = await completeJSON([{ role: "user", content: prompt }], { temperature: 0.4, maxTokens: 4096 });
+    const d = await completeJSON([{ role: "user", content: prompt }], { temperature: 0.4, maxTokens: 4096, only: "Gemini" });
     const rubric = Array.isArray(d.rubric) ? d.rubric.map(String).filter(Boolean) : [];
     if (!d.brief || !d.reference || rubric.length < 3) throw new LLMError("invalid_json", "exercise missing brief, reference or rubric");
     return {
@@ -85,9 +98,8 @@ async function write({ concept, level, prereqTitles }) {
     };
   }
 
-  const body = await complete([{ role: "user", content: prompt }], { temperature: 0.5, maxTokens: 4096 });
-  if (body.trim().length < 400) throw new LLMError("empty", `only ${body.trim().length} chars came back`);
-  return { body: body.trim(), exercise: null, sources: cite };
+  const body = await complete([{ role: "user", content: prompt }], { temperature: 0.5, maxTokens: 4096, only: "Gemini" });
+  return { body: assertComplete(body), exercise: null, sources: cite };
 }
 
 /* ---------------- run ---------------- */
@@ -112,8 +124,9 @@ for (const job of todo.slice(0, BUDGET)) {
   } catch (e) {
     failed++;
     console.warn(`  ${label.padEnd(30)} FAIL ${e.code || ""} ${String(e.message).slice(0, 120)}`);
-    // Out of quota for today: stop rather than burn the rest of the run failing.
-    if (e.code === "rate_limited") { console.warn("  quota exhausted, stopping early"); break; }
+    // Out of Gemini quota for today: stop rather than burn the rest of the run
+    // failing. Nothing was saved, so the next run retries this same job.
+    if (e.code === "rate_limited" || e.code === "no_key") { console.warn("  Gemini quota spent, stopping until tomorrow"); break; }
   }
   await sleep(GAP);
 }
