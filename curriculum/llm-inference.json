@@ -1,0 +1,243 @@
+{
+  "track": "llm-inference",
+  "title": "From matrix multiply to a production LLM inference server",
+  "audience": "Can write Python. Knows no machine learning.",
+  "papers": {
+    "1706.03762": "Attention Is All You Need",
+    "2205.14135": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
+    "2307.08691": "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning",
+    "1911.02150": "Fast Transformer Decoding: One Write-Head is All You Need",
+    "2305.13245": "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints",
+    "2309.06180": "Efficient Memory Management for Large Language Model Serving with PagedAttention",
+    "2211.17192": "Fast Inference from Transformers via Speculative Decoding",
+    "2208.07339": "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale",
+    "2210.17323": "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers"
+  },
+  "concepts": [
+    {
+      "id": "vectors-and-matmul",
+      "title": "Vectors, matrices and matmul",
+      "area": "ML & math foundations",
+      "max_level": 3,
+      "blurb": "Why a matrix multiply is the one operation that decides how fast anything runs.",
+      "requires": [],
+      "papers": []
+    },
+    {
+      "id": "softmax",
+      "title": "Softmax and why it appears everywhere",
+      "area": "ML & math foundations",
+      "max_level": 3,
+      "blurb": "Turning arbitrary scores into a probability distribution, and the numerical traps in doing so.",
+      "requires": ["vectors-and-matmul"],
+      "papers": []
+    },
+    {
+      "id": "embeddings",
+      "title": "Embeddings: meaning as geometry",
+      "area": "ML & math foundations",
+      "max_level": 3,
+      "blurb": "Representing discrete things as vectors so that distance means similarity.",
+      "requires": ["vectors-and-matmul"],
+      "papers": []
+    },
+    {
+      "id": "neural-net-basics",
+      "title": "Forward pass, loss, backprop",
+      "area": "ML & math foundations",
+      "max_level": 4,
+      "blurb": "The whole training loop, derived once, so that nothing later has to be magic.",
+      "requires": ["vectors-and-matmul", "softmax"],
+      "papers": []
+    },
+    {
+      "id": "sequence-models",
+      "title": "Why RNNs could not scale",
+      "area": "LLM internals",
+      "max_level": 3,
+      "blurb": "The sequential bottleneck that motivated attention. You have to feel this pain to value the fix.",
+      "requires": ["neural-net-basics"],
+      "papers": []
+    },
+    {
+      "id": "attention-mechanism",
+      "title": "Attention: query, key, value",
+      "area": "LLM internals",
+      "max_level": 5,
+      "blurb": "Weighted lookup, written as a differentiable operation.",
+      "requires": ["softmax", "embeddings", "sequence-models"],
+      "papers": [
+        { "id": "1706.03762", "role": "canonical", "note": "Section 3.2 defines scaled dot-product attention, including why the scaling factor exists." }
+      ]
+    },
+    {
+      "id": "self-attention",
+      "title": "Self-attention and the quadratic cost",
+      "area": "LLM internals",
+      "max_level": 5,
+      "blurb": "Every token attending to every other token, and the quadratic bill that follows.",
+      "requires": ["attention-mechanism"],
+      "papers": [
+        { "id": "1706.03762", "role": "canonical", "note": "Section 4 compares self-attention against recurrence and convolution on cost per layer." }
+      ]
+    },
+    {
+      "id": "multi-head-attention",
+      "title": "Multi-head attention",
+      "area": "LLM internals",
+      "max_level": 5,
+      "blurb": "Several attention patterns computed in parallel, and what individual heads actually learn.",
+      "requires": ["self-attention"],
+      "papers": [
+        { "id": "1706.03762", "role": "canonical", "note": "Section 3.2.2 on splitting into heads and the dimensionality bookkeeping." }
+      ]
+    },
+    {
+      "id": "positional-encoding",
+      "title": "Positional information",
+      "area": "LLM internals",
+      "max_level": 4,
+      "blurb": "Attention is order-blind. How position gets injected, from sinusoids to RoPE.",
+      "requires": ["self-attention"],
+      "papers": [
+        { "id": "1706.03762", "role": "canonical", "note": "Section 3.5 on sinusoidal encodings, and why later models replaced them." }
+      ]
+    },
+    {
+      "id": "transformer-architecture",
+      "title": "The transformer block",
+      "area": "LLM internals",
+      "max_level": 5,
+      "blurb": "Attention, feed-forward, residual and norm, assembled into the block everything else is built from.",
+      "requires": ["multi-head-attention", "positional-encoding"],
+      "papers": [
+        { "id": "1706.03762", "role": "canonical", "note": "Section 3 as a whole: the complete architecture." }
+      ]
+    },
+    {
+      "id": "tokenization",
+      "title": "Tokenization and BPE",
+      "area": "LLM internals",
+      "max_level": 3,
+      "blurb": "How text becomes integers, and why token counts never match your intuition.",
+      "requires": ["embeddings"],
+      "papers": []
+    },
+    {
+      "id": "autoregressive-decoding",
+      "title": "Autoregressive decoding",
+      "area": "Inference & serving",
+      "max_level": 4,
+      "blurb": "Generating one token at a time, and why that single fact makes serving hard.",
+      "requires": ["transformer-architecture", "tokenization"],
+      "papers": []
+    },
+    {
+      "id": "prefill-vs-decode",
+      "title": "Prefill and decode are different problems",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "One is compute-bound, the other memory-bound. Almost every serving decision follows from this split.",
+      "requires": ["autoregressive-decoding"],
+      "papers": []
+    },
+    {
+      "id": "kv-cache",
+      "title": "The KV cache",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Trading memory for time, and the memory growth that then dominates every other concern.",
+      "requires": ["prefill-vs-decode"],
+      "papers": []
+    },
+    {
+      "id": "memory-bandwidth",
+      "title": "Memory bandwidth, not FLOPs, is the limit",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Arithmetic intensity and the roofline model, applied to a decoder that reads more than it computes.",
+      "requires": ["kv-cache"],
+      "papers": [
+        { "id": "2205.14135", "role": "canonical", "note": "Section 2 states the IO-awareness argument precisely, with the GPU memory hierarchy numbers." }
+      ]
+    },
+    {
+      "id": "flash-attention",
+      "title": "FlashAttention",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Exact attention made fast by never writing the attention matrix to memory at all.",
+      "requires": ["memory-bandwidth", "multi-head-attention"],
+      "papers": [
+        { "id": "2205.14135", "role": "canonical", "note": "Section 3: tiling and recomputation, and the online softmax that makes it exact." },
+        { "id": "2307.08691", "role": "followup", "note": "What version 1 got wrong about work partitioning across warps." }
+      ]
+    },
+    {
+      "id": "mqa-gqa",
+      "title": "Multi-query and grouped-query attention",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Shrinking the KV cache by sharing key and value heads, and the quality that costs.",
+      "requires": ["kv-cache", "multi-head-attention"],
+      "papers": [
+        { "id": "1911.02150", "role": "canonical", "note": "The original argument for a single write head, and the measured decode speedup." },
+        { "id": "2305.13245", "role": "canonical", "note": "The interpolation between MHA and MQA that production models actually ship." }
+      ]
+    },
+    {
+      "id": "paged-attention",
+      "title": "PagedAttention and vLLM",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Virtual memory paging, borrowed from operating systems, applied to the KV cache.",
+      "requires": ["kv-cache", "memory-bandwidth"],
+      "papers": [
+        { "id": "2309.06180", "role": "canonical", "note": "The fragmentation measurements in Section 3 are the entire motivation for the design." }
+      ]
+    },
+    {
+      "id": "continuous-batching",
+      "title": "Continuous batching",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Why static batches waste a GPU, and how iteration-level scheduling recovers the throughput.",
+      "requires": ["paged-attention", "prefill-vs-decode"],
+      "papers": [
+        { "id": "2309.06180", "role": "background", "note": "Section 4 describes the scheduler that makes paging worthwhile." }
+      ]
+    },
+    {
+      "id": "speculative-decoding",
+      "title": "Speculative decoding",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "A small model guesses ahead, the large model verifies in parallel, and the output distribution is provably unchanged.",
+      "requires": ["autoregressive-decoding", "memory-bandwidth"],
+      "papers": [
+        { "id": "2211.17192", "role": "canonical", "note": "The acceptance criterion and the proof that the sampled distribution is preserved." }
+      ]
+    },
+    {
+      "id": "quantization",
+      "title": "Quantization for inference",
+      "area": "Inference & serving",
+      "max_level": 5,
+      "blurb": "Fewer bits per weight, and the outlier features that make naive approaches collapse.",
+      "requires": ["memory-bandwidth"],
+      "papers": [
+        { "id": "2208.07339", "role": "canonical", "note": "The emergent outlier features, found empirically, and the mixed-precision decomposition they force." },
+        { "id": "2210.17323", "role": "canonical", "note": "Post-training quantization done with second-order information instead of rounding." }
+      ]
+    },
+    {
+      "id": "serving-system-design",
+      "title": "Design an LLM serving system",
+      "area": "AI system design",
+      "max_level": 5,
+      "blurb": "Capstone: given a traffic pattern, latency targets and a GPU budget, produce a design and defend every choice.",
+      "requires": ["continuous-batching", "flash-attention", "mqa-gqa", "speculative-decoding", "quantization"],
+      "papers": []
+    }
+  ]
+}
