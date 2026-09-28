@@ -88,7 +88,7 @@ async function write({ concept, level, prereqTitles }) {
   const cite = sources.map(s => ({ arxiv_id: s.arxiv_id, section: s.heading }));
 
   if (level === 3) {
-    const d = await completeJSON([{ role: "user", content: prompt }], { temperature: 0.4, maxTokens: 4096, only: "Gemini" });
+    const d = await completeJSON([{ role: "user", content: prompt }], { temperature: 0.4, maxTokens: 4096, only: "Gemini", retries: 4 });
     const rubric = Array.isArray(d.rubric) ? d.rubric.map(String).filter(Boolean) : [];
     if (!d.brief || !d.reference || rubric.length < 3) throw new LLMError("invalid_json", "exercise missing brief, reference or rubric");
     return {
@@ -98,7 +98,7 @@ async function write({ concept, level, prereqTitles }) {
     };
   }
 
-  const body = await complete([{ role: "user", content: prompt }], { temperature: 0.5, maxTokens: 4096, only: "Gemini" });
+  const body = await complete([{ role: "user", content: prompt }], { temperature: 0.5, maxTokens: 4096, only: "Gemini", retries: 4 });
   return { body: assertComplete(body), exercise: null, sources: cite };
 }
 
