@@ -1,0 +1,35 @@
+name: Build the knowledge base
+
+# Writes a few lesson levels per run, inside the free Gemini quota, until the
+# curriculum is complete. Separate from the daily picks job so a failure here
+# never costs anyone their morning notification.
+on:
+  schedule:
+    - cron: "10 */6 * * *"   # four times a day
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: "How many levels to write this run"
+        required: false
+        default: "5"
+
+concurrency:
+  group: author            # never let two runs write the same level at once
+  cancel-in-progress: false
+
+jobs:
+  author:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: node scripts/author.mjs --budget "${{ inputs.budget || '5' }}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
